@@ -21,7 +21,7 @@ type StreamReceiver interface {
 	Recv() (*socket.RawResponse, error)
 }
 
-func ReveiveMiniTickerMessage(ctx context.Context, wg *sync.WaitGroup, outChan chan []byte) {
+func ReceiveMiniTickerMessage(ctx context.Context, wg *sync.WaitGroup, outChan chan []byte) {
 	defer wg.Done()
 
 	conn, err := createClientConn(ctx)

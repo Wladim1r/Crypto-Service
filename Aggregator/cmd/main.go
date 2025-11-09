@@ -30,7 +30,7 @@ func main() {
 
 	wg.Add(2)
 	go converting.ReceiveAggTradeMessage(ctx, wg, rawMsgsChan)
-	// go converting.ReveiveMiniTickerMessage(ctx, wg, rawMsgsChan)
+	// go converting.ReceiveMiniTickerMessage(ctx, wg, rawMsgsChan)
 	// go converting.ConvertRawToArrDS(ctx, wg, rawMsgsChan, dailyStatChan)
 	go converting.ConvertRawToArrSS(ctx, wg, rawMsgsChan, secondStatChan)
 	// go converting.ReceiveKafkaMsg(ctx, wg, dailyStatChan, kafkaMsgChan)

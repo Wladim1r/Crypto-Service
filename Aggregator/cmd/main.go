@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wladim1r/aggregator/gateway/converting"
 	"github.com/Wladim1r/aggregator/gateway/strman"
+	"github.com/Wladim1r/aggregator/lib/getenv"
 	"github.com/Wladim1r/aggregator/periferia/reddis"
 	"github.com/gin-gonic/gin"
 
@@ -69,13 +70,13 @@ func main() {
 	})
 
 	server := http.Server{
-		Addr:    ":8088",
+		Addr:    getenv.GetString("SERVER_ADDR", ":8088"),
 		Handler: r,
 	}
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
-			slog.Error("Failed to run server on port :8088", "error", err)
+			slog.Error("Failed to run server", "error", err)
 			c <- os.Interrupt
 		}
 	}()

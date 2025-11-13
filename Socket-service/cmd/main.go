@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/Wladimir/socket-service/connsock"
+	"github.com/Wladimir/socket-service/lib/getenv"
 	"github.com/Wladimir/socket-service/svr"
 )
 
@@ -23,7 +24,7 @@ func main() {
 	wg.Add(1)
 	go svr.StartServer(wg, connManager, ctx)
 
-	slog.Info("🚀 Server started", "port", connsock.Port)
+	slog.Info("🚀 Server started", "port", getenv.GetString("PORT", ":5052"))
 
 	<-c
 	cancel()

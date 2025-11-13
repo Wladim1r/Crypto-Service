@@ -7,14 +7,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wladim1r/aggregator/lib/getenv"
 	"github.com/Wladim1r/proto-crypto/gen/socket-aggregator"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-const (
-	Address    = "socket-service:50051"
-	MaxRetries = 10
+var (
+	Address    = getenv.GetString("SOCKET_SERVICE_ADDR", "socket-service:50051")
+	MaxRetries = getenv.GetInt("SOCKET_SERVICE_MAX_RETRIES", 10)
 )
 
 type StreamReceiver interface {

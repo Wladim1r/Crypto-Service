@@ -12,10 +12,7 @@ import (
 )
 
 const (
-	AggTradeURL    = "wss://stream.binance.com:443/ws/"
 	EvTypeAggTrade = "@aggTrade"
-	MiniTickerURL  = "wss://stream.binance.com:443/ws/!miniTicker@arr"
-	Port           = ":50051"
 )
 
 type socketProducer struct {

@@ -172,6 +172,8 @@ services:
 
   socket-service:
     build: ./Socket-service/
+    env_file:
+        - .env
     container_name: socket-service
     restart: always
     ports:
@@ -181,6 +183,8 @@ services:
 
   aggregator-service:
     build: ./Aggregator/
+    env_file:
+        - .env
     container_name: aggregator-service
     restart: on-failure:5
     depends_on:
@@ -216,6 +220,8 @@ services:
 
   kafka-clickhouse:
     build: ./Kafka-Clickhouse/
+    env_file:
+        - .env
     container_name: kafka-clickhouse
     restart: on-failure:5
     depends_on:

@@ -7,11 +7,8 @@ import (
 	"sync"
 
 	"github.com/Wladim1r/proto-crypto/gen/socket-aggregator"
+	"github.com/Wladimir/socket-service/lib/getenv"
 	"google.golang.org/grpc"
-)
-
-const (
-	Address = "0.0.0.0:50051"
 )
 
 type ConnectionManager interface {
@@ -102,7 +99,9 @@ func (s *server) ReceiveRawAggTrade(
 func StartServer(wg *sync.WaitGroup, connManager ConnectionManager, ctx context.Context) {
 	defer wg.Done()
 
-	listen, err := net.Listen("tcp", Address)
+	address := getenv.GetString("ADDRESS", "0.0.0.0:12345")
+
+	listen, err := net.Listen("tcp", address)
 	if err != nil {
 		slog.Error("Could not listening connection", "error", err)
 		return
@@ -112,7 +111,7 @@ func StartServer(wg *sync.WaitGroup, connManager ConnectionManager, ctx context.
 
 	register(svr, connManager, ctx)
 
-	slog.Info("👂 Server listening", "address", Address)
+	slog.Info("👂 Server listening", "address", address)
 
 	go func() {
 		if err := svr.Serve(listen); err != nil {

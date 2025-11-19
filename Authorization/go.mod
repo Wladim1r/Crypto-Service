@@ -1,4 +1,4 @@
-module auth
+module github.com/Wladim1r/auth
 
 go 1.24.4
 

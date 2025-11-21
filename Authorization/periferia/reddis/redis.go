@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Wladim1r/auth/lib/getenv"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -12,12 +13,12 @@ type RDB struct {
 	rdb *redis.Client
 }
 
-func NewClient(addr string) *RDB {
+func NewClient() *RDB {
 	return &RDB{
 		rdb: redis.NewClient(&redis.Options{
-			Addr:     addr,
-			Password: "",
-			DB:       0,
+			Addr:     getenv.GetString("REDIS_ADDR", "localhost:6379"),
+			Password: getenv.GetString("REDIS_PASSWORD", ""),
+			DB:       getenv.GetInt("REDIS_DB", 0),
 		}),
 	}
 }

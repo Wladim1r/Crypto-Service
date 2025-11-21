@@ -8,27 +8,27 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
-	repo "github.com/Wladim1r/auth/internal/api/repository"
+	"github.com/Wladim1r/auth/internal/api/service"
 	"github.com/Wladim1r/auth/internal/models"
 	"github.com/Wladim1r/auth/lib/errs"
+	"github.com/Wladim1r/auth/lib/getenv"
 	"github.com/Wladim1r/auth/lib/hashpwd"
 	"github.com/Wladim1r/auth/periferia/reddis"
 	"github.com/gin-gonic/gin"
 )
 
 type handler struct {
-	ctx  context.Context
-	repo repo.UsersDB
-	rdb  *reddis.RDB
+	ctx context.Context
+	s   service.Service
+	rdb *reddis.RDB
 }
 
-func NewHandler(ctx context.Context, repo repo.UsersDB, rdb *reddis.RDB) *handler {
+func NewHandler(ctx context.Context, service service.Service, rdb *reddis.RDB) *handler {
 	return &handler{
-		ctx:  ctx,
-		repo: repo,
-		rdb:  rdb,
+		ctx: ctx,
+		s:   service,
+		rdb: rdb,
 	}
 }
 
@@ -41,12 +41,12 @@ func (h *handler) Registration(c *gin.Context) {
 		return
 	}
 
-	err := h.repo.CheckUserExists(req.Name)
+	err := h.s.CheckUserExists(req.Name)
 
 	if err != nil {
 		switch {
 		case errors.Is(err, errs.ErrRecordingWNF):
-			hashPwd, err := hashpwd.HashPwd(h.repo, []byte(req.Password), req.Name)
+			hashPwd, err := hashpwd.HashPwd([]byte(req.Password), req.Name)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"Could not hash password": err.Error(),
@@ -54,7 +54,7 @@ func (h *handler) Registration(c *gin.Context) {
 				return
 			}
 
-			err = h.repo.CreateUser(req.Name, hashPwd)
+			err = h.s.CreateUser(req.Name, hashPwd)
 			if err != nil {
 				switch {
 				case errors.Is(err, errs.ErrRecordingWNC):
@@ -98,9 +98,17 @@ func (h *handler) Login(c *gin.Context) {
 	rand.Read(key)
 	token := hex.EncodeToString(key)
 
-	h.rdb.Record(h.ctx, token, name, 80*time.Second)
+	h.rdb.Record(h.ctx, token, name, getenv.GetTime("REDIS_TTL", 30))
 
-	c.SetCookie("token", token, 80, "/", "localhost", false, true)
+	c.SetCookie(
+		"token",
+		token,
+		getenv.GetInt("COOKIE_TTL", 30),
+		"/",
+		getenv.GetString("COOKIE_DOMAIN", "localhost"),
+		false,
+		true,
+	)
 	c.JSON(http.StatusOK, "Login success!🫦")
 }
 
@@ -118,7 +126,7 @@ func (h *handler) Logout(c *gin.Context) {
 
 	h.rdb.Delete(h.ctx, token)
 
-	c.SetCookie("token", "", -1, "/", "localhost", false, true)
+	c.SetCookie("token", "", -1, "/", getenv.GetString("COOKIE_DOMAIN", "localhost"), false, true)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "you've got rid of 🍪🗑️",
 	})
@@ -135,7 +143,7 @@ func (h *handler) Delacc(c *gin.Context) {
 		return
 	}
 
-	err := h.repo.DeleteUser(name)
+	err := h.s.DeleteUser(name)
 	if err != nil {
 		switch {
 		case errors.Is(err, errs.ErrRecordingWND):
@@ -153,7 +161,7 @@ func (h *handler) Delacc(c *gin.Context) {
 	}
 
 	h.rdb.Delete(h.ctx, token)
-	c.SetCookie("token", "", -1, "/", "localhost", false, true)
+	c.SetCookie("token", "", -1, "/", getenv.GetString("COOKIE_DOMAIN", "localhost"), false, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "👍 user has successful deleted from DB",

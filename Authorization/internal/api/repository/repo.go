@@ -13,7 +13,7 @@ import (
 
 type UsersDB interface {
 	CreateTable() error
-	CreateUser(name string, password []byte) error
+	CreateUser(user *models.User) error
 	DeleteUser(name string) error
 	SelectPwdByName(name string) (string, error)
 	CheckUserExists(name string) error
@@ -51,12 +51,7 @@ func (db *usersDB) CreateTable() error {
 	return nil
 }
 
-func (db *usersDB) CreateUser(name string, password []byte) error {
-	user := models.User{
-		Name:     name,
-		Password: string(password),
-	}
-
+func (db *usersDB) CreateUser(user *models.User) error {
 	result := db.db.Create(&user)
 
 	if result.RowsAffected == 0 {
@@ -115,7 +110,3 @@ func (db *usersDB) CheckUserExists(name string) error {
 
 	return nil
 }
-
-// func (db *usersDB) Close() {
-// 	db.db.Close()
-// }

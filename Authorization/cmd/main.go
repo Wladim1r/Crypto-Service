@@ -10,6 +10,8 @@ import (
 
 	hand "github.com/Wladim1r/auth/internal/api/handlers"
 	repo "github.com/Wladim1r/auth/internal/api/repository"
+	serv "github.com/Wladim1r/auth/internal/api/service"
+	"github.com/Wladim1r/auth/lib/getenv"
 	"github.com/Wladim1r/auth/lib/midware"
 	"github.com/Wladim1r/auth/periferia/db"
 	"github.com/Wladim1r/auth/periferia/reddis"
@@ -19,7 +21,7 @@ import (
 
 func main() {
 	db := db.MustLoad()
-	rdb := reddis.NewClient("redis:6379")
+	rdb := reddis.NewClient()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -34,7 +36,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	hand := hand.NewHandler(ctx, repo, rdb)
+	serv := serv.NewService(repo)
+	hand := hand.NewHandler(ctx, serv, rdb)
 
 	r := gin.Default()
 
@@ -50,7 +53,7 @@ func main() {
 	}
 
 	server := http.Server{
-		Addr:    ":8080",
+		Addr:    getenv.GetString("SERVER_ADDR", ":8080"),
 		Handler: r,
 	}
 

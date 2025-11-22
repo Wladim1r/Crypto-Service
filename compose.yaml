@@ -171,9 +171,9 @@ services:
       - crypto-network
 
   socket-service:
-    build: ./Socket-service/
+    build: ./Socket/
     env_file:
-      - ./Socket-service/.env
+      - ./Socket/.env
     container_name: socket-service
     restart: always
     ports:
@@ -219,9 +219,9 @@ services:
       - crypto-network
 
   kafka-clickhouse:
-    build: ./Kafka-Clickhouse/
+    build: ./Kafka-ClickHouse/
     env_file:
-      - ./Kafka-Clickhouse/.env
+      - ./Kafka-ClickHouse/.env
     container_name: kafka-clickhouse
     restart: on-failure:5
     depends_on:
@@ -252,6 +252,18 @@ services:
       BATCH_TIMEOUT: "5s"
       CLICKHOUSE_MAX_RETRIES: "3"
       CLICKHOUSE_DIAL_TIMEOUT: "10s"
+    networks:
+      - crypto-network
+
+  redis-dashboard:
+    build: ./Redis-Dashboard/
+    # env_file:
+    #     - ./Redis-Dashboard/.env
+    container_name: redis-dashboard
+    restart: on-failure:5
+    depends_on:
+      aggregator-service:
+        condition: service_started
     networks:
       - crypto-network
 

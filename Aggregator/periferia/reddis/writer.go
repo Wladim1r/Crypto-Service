@@ -33,7 +33,7 @@ func (s *saver) setPing(ctx context.Context) error {
 }
 
 func (s *saver) saveSecondStat(ctx context.Context, msg models.SecondStat) error {
-	key := msg.Symbol
+	// key := msg.Symbol
 
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -41,8 +41,14 @@ func (s *saver) saveSecondStat(ctx context.Context, msg models.SecondStat) error
 		return err
 	}
 
-	if err := s.rdb.Set(ctx, key, data, s.cfg.TTL).Err(); err != nil {
-		slog.Error("Could not save msg to Kafka", "error", err)
+	// if err := s.rdb.Set(ctx, key, data, s.cfg.TTL).Err(); err != nil {
+	// 	slog.Error("Could not save msg to Kafka", "error", err)
+	// 	return err
+	// }
+
+	cmd := s.rdb.Publish(ctx, "stream", data)
+	if cmd.Err() != nil {
+		slog.Error("Could not sent msg to Redis", "error", err)
 		return err
 	}
 
@@ -79,11 +85,7 @@ func (s *saver) Start(ctx context.Context, wg *sync.WaitGroup, inChan chan model
 				continue
 			}
 
-			slog.Info("Saved to Redis",
-				"symbol", stat.Symbol,
-				"price", stat.Price,
-				"time", stat.TradeTime,
-			)
+			slog.Info("Saved to Redis")
 		}
 	}
 }

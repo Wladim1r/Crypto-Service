@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,32 +19,42 @@ import (
 func main() {
 	db := db.MustLoad()
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 
 	wg := new(sync.WaitGroup)
 
-	repo := repo.NewRepository(db)
-	if err := repo.CreateTable(); err != nil {
-		slog.Error("Could not create table", "error", err)
-		os.Exit(1)
-	}
+	uRepo, tRepo := repo.NewRepositories(db)
+	uRepo.CreateTable()
 
-	serv := serv.NewService(repo)
-	hand := hand.NewHandler(ctx, serv)
+	uServ, tServ := serv.NewServices(uRepo, tRepo)
+	hand := hand.NewHandler(uServ, tServ)
 
 	r := gin.Default()
 
 	r.POST("/register", hand.Registration)
-	r.POST("/login", midware.CheckUserExists(repo), hand.Login)
+	r.POST("/login", midware.CheckCookieUserID(), midware.CheckUserExists(uRepo), hand.Login)
+
+	test := r.Group("/auth")
+	test.Use(midware.CheckAuth(uRepo))
+	{
+		test.POST("/test", hand.Test)
+	}
+
+	refresh := r.Group("/auth")
+	refresh.Use(midware.CheckCookieRefToken(), midware.CheckCookieUserID())
+	{
+		refresh.POST("/refresh", hand.Refresh)
+	}
 
 	logined := r.Group("/auth")
-	logined.Use(midware.CheckAuth())
+	logined.Use(
+		midware.CheckAuth(uRepo),
+		midware.CheckCookieRefToken(),
+		midware.CheckCookieUserID(),
+	)
 	{
-		logined.POST("/test", hand.Test)
-		// logined.POST("/logout", hand.Logout)
+		logined.POST("/logout", hand.Logout)
 		logined.POST("/delacc", hand.Delacc)
 	}
 
@@ -55,10 +63,9 @@ func main() {
 		Handler: r,
 	}
 
-	// wg.Add(1)
+	wg.Add(1)
 	go server.ListenAndServe()
 
 	<-c
-	cancel()
 	wg.Wait()
 }

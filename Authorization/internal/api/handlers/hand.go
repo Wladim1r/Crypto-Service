@@ -2,10 +2,9 @@
 package handlers
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Wladim1r/auth/internal/api/service"
@@ -14,24 +13,22 @@ import (
 	"github.com/Wladim1r/auth/lib/getenv"
 	"github.com/Wladim1r/auth/lib/hashpwd"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 type handler struct {
-	ctx context.Context
-	s   service.Service
+	us service.UserService
+	ts service.TokenService
 }
 
-func NewHandler(ctx context.Context, service service.Service) *handler {
+func NewHandler(uServ service.UserService, tServ service.TokenService) *handler {
 	return &handler{
-		ctx: ctx,
-		s:   service,
-		// rdb: rdb,
+		us: uServ,
+		ts: tServ,
 	}
 }
 
 func (h *handler) Registration(c *gin.Context) {
-	var req models.Request
+	var req models.UserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -39,12 +36,12 @@ func (h *handler) Registration(c *gin.Context) {
 		return
 	}
 
-	err := h.s.CheckUserExists(req.Name)
+	err := h.us.CheckUserExistsByName(req.Name)
 
 	if err != nil {
 		switch {
 		case errors.Is(err, errs.ErrRecordingWNF):
-			hashPwd, err := hashpwd.HashPwd([]byte(req.Password), req.Name)
+			hashPwd, err := hashpwd.HashPwd([]byte(req.Password))
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"Could not hash password": err.Error(),
@@ -52,7 +49,7 @@ func (h *handler) Registration(c *gin.Context) {
 				return
 			}
 
-			err = h.s.CreateUser(req.Name, hashPwd)
+			userID, err := h.us.CreateUser(req.Name, hashPwd)
 			if err != nil {
 				switch {
 				case errors.Is(err, errs.ErrRecordingWNC):
@@ -68,6 +65,20 @@ func (h *handler) Registration(c *gin.Context) {
 					return
 				}
 			}
+
+			userIDstr := strconv.Itoa(userID)
+			refreshTTL := getenv.GetTime("REFRESH_TTL", 150*time.Second)
+
+			c.SetCookie(
+				"userID",
+				userIDstr,
+				int(refreshTTL),
+				"/",
+				getenv.GetString("COOKIE_DOMAIN", "localhost"),
+				false,
+				true,
+			)
+
 			c.JSON(http.StatusCreated, gin.H{
 				"message": "user successful created 🎊🤩",
 			})
@@ -86,29 +97,15 @@ func (h *handler) Registration(c *gin.Context) {
 	})
 }
 
-func createJWT(name string) (string, error) {
-	claims := jwt.MapClaims{
-		"sub": name,
-		"exp": time.Now().Add(40 * time.Second).Unix(),
-	}
-
-	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	signedToken, err := jwtToken.SignedString(getenv.GetString("SECRET_KEY", "default_secret_key"))
-	if err != nil {
-		return "", fmt.Errorf("failed to sign jwt: %w", err)
-	}
-
-	return signedToken, nil
-}
-
 func (h *handler) Login(c *gin.Context) {
-	name, ok := getFromCtx(c, "username")
+	userID, ok := getFromCtx[int](c, "user_id")
 	if !ok {
 		return
 	}
 
-	jwt, err := createJWT(name)
+	refreshTTL := getenv.GetTime("REFRESH_TTL", 150*time.Second)
+
+	access, refresh, err := h.ts.SaveToken(userID, time.Now().Add(refreshTTL))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -116,9 +113,27 @@ func (h *handler) Login(c *gin.Context) {
 		return
 	}
 
+	c.SetCookie(
+		"refreshToken",
+		refresh,
+		int(refreshTTL),
+		"/",
+		getenv.GetString("COOKIE_DOMAIN", "localhost"),
+		false,
+		true,
+	)
+
+	tStruct := struct {
+		Access  string `json:"access"`
+		Refresh string `json:"refresh"`
+	}{
+		Access:  access,
+		Refresh: refresh,
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"msg":   "Login success!🫦",
-		"token": jwt,
+		"msg":                  "Login success!🫦",
+		"Here is your tokens🌐": tStruct,
 	})
 }
 
@@ -128,18 +143,52 @@ func (h *handler) Test(c *gin.Context) {
 	})
 }
 
-func (h *handler) Delacc(c *gin.Context) {
-	name, ok := getFromCtx(c, "username")
+func (h *handler) Logout(c *gin.Context) {
+	token, ok := getFromCtx[string](c, "refresh_token")
 	if !ok {
 		return
 	}
 
-	err := h.s.DeleteUser(name)
+	if err := h.ts.DeleteToken(token); err != nil {
+		switch {
+		case errors.Is(err, errs.ErrRecordingWNF):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": err.Error(),
+			})
+		case errors.Is(err, errs.ErrDB):
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"unknown error": err.Error(),
+			})
+		}
+		return
+	}
+
+	cookieDomain := getenv.GetString("COOKIE_DOMAIN", "localhost")
+	c.SetCookie("refreshToken", "", -1, "/", cookieDomain, false, true)
+	c.SetCookie("userID", "", -1, "/", cookieDomain, false, true)
+
+	c.JSON(http.StatusOK, gin.H{
+		"msg": "you've successfully logouted",
+	})
+
+}
+
+func (h *handler) Delacc(c *gin.Context) {
+	userID, ok := getFromCtx[int](c, "user_id")
+	if !ok {
+		return
+	}
+
+	err := h.us.DeleteUser(userID)
 	if err != nil {
 		switch {
 		case errors.Is(err, errs.ErrRecordingWND):
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"Could not create user rawsAffected=0": err.Error(),
+				"Could not delete user rawsAffected=0": err.Error(),
 			})
 			return
 
@@ -151,20 +200,62 @@ func (h *handler) Delacc(c *gin.Context) {
 		}
 	}
 
+	cookieDomain := getenv.GetString("COOKIE_DOMAIN", "localhost")
+	c.SetCookie("refreshToken", "", -1, "/", cookieDomain, false, true)
+	c.SetCookie("userID", "", -1, "/", cookieDomain, false, true)
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "👍 user has successful deleted from DB",
 	})
 }
 
-func getFromCtx(c *gin.Context, key string) (string, bool) {
-	username, exists := c.Get(key)
-	if !exists {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"err": fmt.Sprintf("context var %s does not exist", key),
-		})
-		return "", false
+func (h *handler) Refresh(c *gin.Context) {
+	token, ok := getFromCtx[string](c, "refresh_token")
+	if !ok {
+		return
 	}
-	name := username.(string)
+	userID, ok := getFromCtx[int](c, "user_id")
+	if !ok {
+		return
+	}
+	refreshTTL := getenv.GetTime("REFRESH_TTL", 150*time.Second)
 
-	return name, true
+	access, refresh, err := h.ts.RefreshAccessToken(token, userID, time.Now().Add(refreshTTL))
+	if err != nil {
+		switch {
+		case errors.Is(err, errs.ErrTokenTTL):
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": err.Error(),
+			})
+		case errors.Is(err, errs.ErrRecordingWNF):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": err.Error(),
+			})
+		case errors.Is(err, errs.ErrDB):
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"unknown error": err.Error(),
+			})
+		}
+		return
+	}
+
+	c.SetCookie(
+		"refreshToken",
+		refresh,
+		int(refreshTTL),
+		"/",
+		getenv.GetString("COOKIE_DOMAIN", "localhost"),
+		false,
+		true,
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"msg":         "tokens have refreshed",
+		"new access":  access,
+		"new refresh": refresh,
+	})
 }

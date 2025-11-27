@@ -5,7 +5,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func HashPwd(pwd []byte, name string) ([]byte, error) {
+func HashPwd(pwd []byte) ([]byte, error) {
 	hashPas, err := bcrypt.GenerateFromPassword(pwd, bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err

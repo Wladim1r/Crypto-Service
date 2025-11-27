@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func verifyToken(c *gin.Context, token string) error {
+func verifyToken(c *gin.Context, token string, r repo.UserRepository) error {
 	jwtToken, err := jwt.Parse(token, func(t *jwt.Token) (any, error) {
 		return []byte(getenv.GetString("SECRET_KEY", "default_secret_key")), nil
 	})
@@ -47,20 +48,24 @@ func verifyToken(c *gin.Context, token string) error {
 		return fmt.Errorf("token life time has expired")
 	}
 
-	nameRaw, ok := claims["sub"]
+	userIDRaw, ok := claims["sub"]
 	if !ok {
-		return fmt.Errorf("field 'username' did not found")
+		return fmt.Errorf("field 'userID' did not found")
 	}
-	name, ok := nameRaw.(string)
+	userID, ok := userIDRaw.(float64)
 	if !ok {
-		return fmt.Errorf("failed to parse nameRaw into string")
+		return fmt.Errorf("failed to parse 'userIDRaw' into float64")
 	}
 
-	c.Set("username", name)
+	if err := r.CheckUserExistsByID(uint(userID)); err != nil {
+		return fmt.Errorf("user does not exist: %w", err)
+	}
+
+	c.Set("user_id", userID)
 	return nil
 }
 
-func CheckAuth() gin.HandlerFunc {
+func CheckAuth(r repo.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeadVal := c.GetHeader("Authorization")
 		if authHeadVal == "" {
@@ -76,7 +81,7 @@ func CheckAuth() gin.HandlerFunc {
 			return
 		}
 
-		if err := verifyToken(c, bearerToken[1]); err != nil {
+		if err := verifyToken(c, bearerToken[1], r); err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": err.Error(),
 			})
@@ -88,9 +93,50 @@ func CheckAuth() gin.HandlerFunc {
 	}
 }
 
-func CheckUserExists(db repo.UsersDB) gin.HandlerFunc {
+func CheckCookieRefToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req models.Request
+		token, err := c.Cookie("refreshToken")
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"no cookie 🔒": err.Error(),
+			})
+			c.Abort()
+			return
+		}
+
+		c.Set("refresh_token", token)
+		c.Next()
+	}
+}
+
+func CheckCookieUserID() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDstr, err := c.Cookie("userID")
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"no cookie 🆔": err.Error(),
+			})
+			c.Abort()
+			return
+		}
+
+		userID, err := strconv.Atoi(userIDstr)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "could not convert str -> int",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Set("user_id", userID)
+		c.Next()
+	}
+}
+
+func CheckUserExists(db repo.UserRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req models.UserRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
@@ -124,7 +170,6 @@ func CheckUserExists(db repo.UsersDB) gin.HandlerFunc {
 			c.Abort()
 		}
 
-		c.Set("username", req.Name)
 		c.Next()
 	}
 }

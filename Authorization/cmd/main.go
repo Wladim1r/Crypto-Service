@@ -35,10 +35,11 @@ func main() {
 	}
 
 	userRepo := repository.NewUserRepository(db)
-	sessionRepo := repository.NewSessionRepository(db)
+	tokenRepo := repository.NewTokenRepository(db)
 
-	serv := serv.NewService(userRepo, sessionRepo)
-	hand := hand.NewHandler(ctx, serv)
+	userService := serv.NewUserService(userRepo)
+	tokenService := serv.NewTokenService(tokenRepo)
+	hand := hand.NewHandler(ctx, userService, tokenService)
 
 	r := gin.Default()
 

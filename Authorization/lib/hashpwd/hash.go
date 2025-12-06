@@ -2,13 +2,15 @@
 package hashpwd
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
+	"fmt"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-func HashPwd(pwd []byte, name string) ([]byte, error) {
+func HashPwd(pwd []byte) ([]byte, error) {
 	hashPas, err := bcrypt.GenerateFromPassword(pwd, bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -17,8 +19,16 @@ func HashPwd(pwd []byte, name string) ([]byte, error) {
 	return hashPas, nil
 }
 
+func GenerateRandomString(length int) (string, error) {
+	b := make([]byte, length)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
 func HashToken(token string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(token))
-	return hex.EncodeToString(hasher.Sum(nil))
+	hash := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", hash)
 }

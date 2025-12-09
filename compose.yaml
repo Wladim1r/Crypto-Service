@@ -1,5 +1,5 @@
 services:
-  postgres_auth:
+  postgres-auth:
     image: postgres:15
     restart: always
     ports:
@@ -19,7 +19,7 @@ services:
     networks:
       - crypto-network
 
-  postgres_profile:
+  postgres-profile:
     image: postgres:15
     restart: always
     ports:
@@ -39,43 +39,6 @@ services:
     networks:
       - crypto-network
 
-  authorization:
-    build: ./Authorization/
-    env_file:
-      - ./Authorization/.env
-    environment:
-      - POSTGRES_HOST=postgres_auth
-      - POSTGRES_DB=auth_db
-    container_name: auth-service
-    restart: on-failure:5
-    depends_on:
-      postgres_auth:
-        condition: service_healthy
-    ports:
-      - "50051:50051"
-    networks:
-      - crypto-network
-
-  profile:
-    build: ./Profile/
-    env_file:
-      - ./Profile/.env
-    environment:
-      - POSTGRES_HOST=postgres_profile
-      - POSTGRES_DB=profile_db
-      - GRPC_ADDR=authorization:50051
-    container_name: profile-service
-    restart: on-failure
-    depends_on:
-      postgres_profile:
-        condition: service_healthy
-      authorization:
-        condition: service_started
-    ports:
-      - "8080:8080"
-    networks:
-      - crypto-network
-
   # zookeeper:
   #   hostname: zookeeper
   #   image: bitnamilegacy/zookeeper:latest
@@ -92,29 +55,29 @@ services:
   #     interval: 5s
   #     timeout: 3s
   #     retries: 5
-  #
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: redis
-  #   restart: always
-  #   ports:
-  #     - "6379:6379"
-  #   command: >
-  #     redis-server
-  #     --maxmemory 256mb
-  #     --maxmemory-policy allkeys-lru
-  #     --save ""
-  #     --appendonly no
-  #   volumes:
-  #     - redis-data:/data
-  #   networks:
-  #     - crypto-network
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 5
-  #
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    volumes:
+      - redis-data:/data
+    networks:
+      - crypto-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # kafka:
   #   hostname: kafka
   #   image: bitnamilegacy/kafka:2.7.0
@@ -179,7 +142,7 @@ services:
   #     echo '✅ Kafka initialization complete'
   #     "
   #   restart: "no"
-  #
+
   # kafka-ui:
   #   image: provectuslabs/kafka-ui:latest
   #   container_name: kafka-ui
@@ -196,7 +159,7 @@ services:
   #       condition: service_healthy
   #   networks:
   #     - crypto-network
-  #
+
   # clickhouse:
   #   image: clickhouse/clickhouse-server:latest
   #   container_name: clickhouse
@@ -218,23 +181,23 @@ services:
   #     interval: 5s
   #     timeout: 3s
   #     retries: 5
-  #
-  # redis-commander:
-  #   image: rediscommander/redis-commander:latest
-  #   container_name: redis-commander
-  #   restart: always
-  #   ports:
-  #     - "8081:8081"
-  #   environment:
-  #     REDIS_HOSTS: "local:redis:6379"
-  #     HTTP_USER: admin
-  #     HTTP_PASSWORD: admin
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #   networks:
-  #     - crypto-network
-  #
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: "local:redis:6379"
+      HTTP_USER: admin
+      HTTP_PASSWORD: admin
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crypto-network
+
   # tabix:
   #   image: spoonest/clickhouse-tabix-web-client:latest
   #   container_name: tabix
@@ -246,55 +209,55 @@ services:
   #       condition: service_healthy
   #   networks:
   #     - crypto-network
-  #
-  # socket-service:
-  #   build: ./Socket/
-  #   env_file:
-  #     - ./Socket/.env
-  #   container_name: socket-service
-  #   restart: always
-  #   ports:
-  #     - "50051:50051"
-  #   networks:
-  #     - crypto-network
-  #
-  # aggregator-service:
-  #   build: ./Aggregator/
-  #   env_file:
-  #     - ./Aggregator/.env
-  #   container_name: aggregator-service
-  #   restart: on-failure:5
-  #   depends_on:
-  #     kafka-init:
-  #       condition: service_completed_successfully
-  #     socket-service:
-  #       condition: service_started
-  #     redis:
-  #       condition: service_healthy
-  #   ports:
-  #     - "50061:50061"
-  #     - "8088:8088"
-  #   environment:
-  #     # Kafka settings
-  #     BROKERS: "kafka:9092"
-  #     TOPIC: "binance.miniticker"
-  #     BATCH_SIZE: "120"
-  #     BATCH_TIMEOUT: "2s"
-  #     ACK: "1"
-  #     MAX_ATTEMPTS: "3"
-  #     WRITE_TIMEOUT: "30s"
-  #
-  #     # Redis settings
-  #     REDIS_ADDR: "redis:6379"
-  #     REDIS_PWD: ""
-  #     REDIS_DB: "0"
-  #     REDIS_MAX_RETRIES: "10"
-  #     REDIS_TTL: "30s"
-  #     REDIS_RETRY_DELAY: "2s"
-  #     REDIS_PING_TIMEOUT: "5s"
-  #   networks:
-  #     - crypto-network
-  #
+
+  socket-service:
+    build: ./Socket/
+    env_file:
+      - ./Socket/.env
+    container_name: socket-service
+    restart: always
+    ports:
+      - "50052:50051"
+    networks:
+      - crypto-network
+
+  aggregator-service:
+    build: ./Aggregator/
+    env_file:
+      - ./Aggregator/.env
+    container_name: aggregator-service
+    restart: on-failure:5
+    depends_on:
+      # kafka-init:
+      #   condition: service_completed_successfully
+      socket-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    ports:
+      - "50061:50061"
+      - "8088:8088"
+    environment:
+      # Kafka settings
+      # BROKERS: "kafka:9092"
+      # TOPIC: "binance.miniticker"
+      # BATCH_SIZE: "120"
+      # BATCH_TIMEOUT: "2s"
+      # ACK: "1"
+      # MAX_ATTEMPTS: "3"
+      # WRITE_TIMEOUT: "30s"
+
+      # Redis settings
+      REDIS_ADDR: "redis:6379"
+      REDIS_PWD: ""
+      REDIS_DB: "0"
+      REDIS_MAX_RETRIES: "10"
+      REDIS_TTL: "30s"
+      REDIS_RETRY_DELAY: "2s"
+      REDIS_PING_TIMEOUT: "5s"
+    networks:
+      - crypto-network
+
   # kafka-clickhouse:
   #   build: ./Kafka-ClickHouse/
   #   env_file:
@@ -331,7 +294,46 @@ services:
   #     CLICKHOUSE_DIAL_TIMEOUT: "10s"
   #   networks:
   #     - crypto-network
-  #
+
+  authorization:
+    build: ./Authorization/
+    env_file:
+      - ./Authorization/.env
+    environment:
+      - POSTGRES_HOST=postgres-auth
+      - POSTGRES_DB=auth_db
+    container_name: auth-service
+    restart: on-failure:5
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      # aggregator-service:
+      #   condition: service_started
+    ports:
+      - "50051:50051"
+    networks:
+      - crypto-network
+
+  profile:
+    build: ./Profile/
+    env_file:
+      - ./Profile/.env
+    environment:
+      - POSTGRES_HOST=postgres-profile
+      - POSTGRES_DB=profile_db
+      - GRPC_ADDR=authorization:50051
+    container_name: profile-service
+    restart: on-failure
+    depends_on:
+      postgres-profile:
+        condition: service_healthy
+      authorization:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    networks:
+      - crypto-network
+
   # redis-dashboard:
   #   build: ./Redis-Dashboard/
   #   # env_file:
@@ -361,9 +363,9 @@ services:
   #     - crypto-network
 
 volumes:
-  kafka-data:
+  # kafka-data:
   redis-data:
-  clickhouse-data:
+  # clickhouse-data:
   postgres-data-auth:
   postgres-data-profile:
 

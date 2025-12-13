@@ -35,10 +35,9 @@ func (cm *ConnectionManager) GetOrCreateConnection(symbol string) <-chan []byte 
 	slog.Info("Creating new connection", "symbol", symbol)
 
 	outputChan := make(chan []byte, 100)
-	msgChan := make(chan error, 1)
 	url := getenv.GetString("AGGTRADE_URL", "I don't know") + symbol + EvTypeAggTrade
 
-	socketConn := NewSocketProduecer(outputChan, url, msgChan)
+	socketConn := NewSocketProduecer(outputChan, url)
 
 	cm.mainWg.Add(1)
 	go socketConn.Start(cm.mainCtx, cm.mainWg)
@@ -60,10 +59,9 @@ func (cm *ConnectionManager) GetMiniTickerConnection() <-chan []byte {
 	slog.Info("Creating new miniTicker connection")
 
 	outputChan := make(chan []byte, 100)
-	msgChan := make(chan error, 1)
 	url := getenv.GetString("MINITICKER_URL", "I don't care")
 
-	socketConn := NewSocketProduecer(outputChan, url, msgChan)
+	socketConn := NewSocketProduecer(outputChan, url)
 
 	cm.mainWg.Add(1)
 	go socketConn.Start(cm.mainCtx, cm.mainWg)

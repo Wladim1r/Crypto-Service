@@ -66,29 +66,47 @@ func (s *server) ReceiveRawAggTrade(
 	req *socket.RawAggTradeRequest,
 	stream socket.SocketService_ReceiveRawAggTradeServer,
 ) error {
-	slog.Info("Client connected to ReceiveRawMiniTicker stream")
-
 	symbol := req.Symbol
-	outputChan := s.connManager.GetOrCreateConnection(symbol)
+	slog.Info("Client connected to ReceiveRawAggTrade stream", "symbol", symbol)
 
+	outputChan := s.connManager.GetOrCreateConnection(symbol)
+	slog.Info("Got output channel for symbol", "symbol", symbol)
+
+	messageCount := 0
 	for {
 		select {
 		case <-stream.Context().Done():
-			slog.Warn("Got Interruption signal from streaming server from stream context")
+			slog.Warn("Got Interruption signal from streaming server from stream context",
+				"symbol", symbol,
+				"messages_sent", messageCount,
+				"error", stream.Context().Err())
 			return stream.Context().Err()
 		case <-s.mainCtx.Done():
-			slog.Info("Got Interruption signal from streaming server from main context")
+			slog.Info("Got Interruption signal from streaming server from main context",
+				"symbol", symbol,
+				"messages_sent", messageCount)
 			return stream.Context().Err()
 		case msg, ok := <-outputChan:
 			if !ok {
-				slog.Warn("Output chan closed")
+				slog.Warn("Output chan closed", "symbol", symbol, "messages_sent", messageCount)
 				return nil
+			}
+			messageCount++
+			if messageCount%100 == 0 {
+				slog.Debug(
+					"Sent messages from aggTrade stream",
+					"symbol",
+					symbol,
+					"count",
+					messageCount,
+				)
 			}
 			if err := stream.Send(&socket.RawResponse{Data: msg}); err != nil {
 				slog.Error(
-					"Could not send raw message from aggTrade stream to clietn",
-					"error",
-					err,
+					"Could not send raw message from aggTrade stream to client",
+					"symbol", symbol,
+					"messages_sent", messageCount,
+					"error", err,
 				)
 				return err
 			}

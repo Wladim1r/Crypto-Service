@@ -33,9 +33,6 @@ func (pr *repository) GetCoins(userID uint) ([]*models.Coin, error) {
 
 func (pr *repository) AddCoin(coin *models.Coin) error {
 	if err := pr.db.Create(&coin).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return fmt.Errorf("%w: %s", errs.ErrDuplicated, err.Error())
-		}
 		return fmt.Errorf("%w: %s", errs.ErrDB, err.Error())
 	}
 

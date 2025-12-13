@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Wladim1r/profile/connmanager"
 	"github.com/Wladim1r/profile/internal/api/profile/service"
@@ -85,12 +86,10 @@ func (h *handler) AddCoin(c *gin.Context) {
 
 	userID := userIDany.(float64)
 
-	if err := h.cs.AddCoin(userID, req.Symbol, req.Quantity); err != nil {
+	symbol := strings.ToLower(req.Symbol)
+
+	if err := h.cs.AddCoin(userID, symbol, req.Quantity); err != nil {
 		switch {
-		case errors.Is(err, errs.ErrDuplicated):
-			c.JSON(http.StatusConflict, gin.H{
-				"error": err.Error(),
-			})
 		case errors.Is(err, errs.ErrDB):
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
@@ -103,9 +102,11 @@ func (h *handler) AddCoin(c *gin.Context) {
 		return
 	}
 
+	h.cm.FollowCoin(int(userID), symbol)
+
 	urlQeury := fmt.Sprintf(
 		"http://aggregator-service:8088/coin?symbol=%s&id=%d",
-		url.QueryEscape(req.Symbol),
+		url.QueryEscape(symbol),
 		int(userID),
 	)
 
@@ -200,7 +201,9 @@ func (h *handler) DeleteCoin(c *gin.Context) {
 
 	userID := userIDany.(float64)
 
-	if err := h.cs.DeleteCoin(userID, req.Symbol); err != nil {
+	symbol := strings.ToLower(req.Symbol)
+
+	if err := h.cs.DeleteCoin(userID, symbol); err != nil {
 		switch {
 		case errors.Is(err, errs.ErrDB):
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -216,7 +219,7 @@ func (h *handler) DeleteCoin(c *gin.Context) {
 
 	urlQeury := fmt.Sprintf(
 		"http://aggregator-service:8088/coin?symbol=%s&id=%d",
-		url.QueryEscape(req.Symbol),
+		url.QueryEscape(symbol),
 		int(userID),
 	)
 
@@ -332,6 +335,11 @@ func (h *handler) GetUserProfileWS(c *gin.Context) {
 			"error": "could not upgrade http to websocket connection 😢",
 		})
 		return
+	}
+
+	// подписываем на все монеты пользователя
+	for _, coin := range user.Coins {
+		h.cm.FollowCoin(int(userID), strings.ToLower(coin.Symbol))
 	}
 
 	h.cm.Register(int(userID), user, conn)

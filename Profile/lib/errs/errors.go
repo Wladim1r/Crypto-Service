@@ -8,7 +8,6 @@ var (
 	ErrRecordingWNC    = errors.New("recording wasn't created")
 	ErrRecordingWND    = errors.New("recording wasn't deleted")
 	ErrRecordingWNF    = errors.New("recording wasn't found")
-	ErrDuplicated      = errors.New("object has already existed")
 	ErrTokenTTL        = errors.New("token's ttl is over")
 	ErrSignToken       = errors.New("failed to sign token")
 	ErrEmptyAuthHeader = errors.New("authorization header is required")

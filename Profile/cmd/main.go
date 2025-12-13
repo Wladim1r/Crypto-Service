@@ -2,21 +2,21 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/Wladim1r/profile/connmanager"
 	hand "github.com/Wladim1r/profile/internal/api/auth/handlers"
 	handler "github.com/Wladim1r/profile/internal/api/profile/handlers"
 	"github.com/Wladim1r/profile/internal/api/profile/repository"
 	"github.com/Wladim1r/profile/internal/api/profile/service"
-	"github.com/Wladim1r/profile/internal/models"
 	"github.com/Wladim1r/profile/lib/getenv"
 	"github.com/Wladim1r/profile/lib/midware"
 	"github.com/Wladim1r/profile/periferia/db"
-	"github.com/Wladim1r/profile/periferia/reddis"
 	"github.com/Wladim1r/proto-crypto/gen/protos/auth-portfile"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
@@ -27,19 +27,17 @@ func main() {
 	db := db.MustLoad()
 	uRepo, cRepo := repository.NewProfileRepository(db)
 	uRepo.CreateTables()
-	uServ, cServ := service.NewProfileService(uRepo, cRepo)
-	connManager := connmanager.NewConnManager()
-
-	handServ := handler.NewHandler(uServ, cServ, &connManager)
-	redisClient := reddis.NewClient(&connManager)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
 
 	wg := new(sync.WaitGroup)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	ch := make(chan models.SecondStat, 100)
+	uServ, cServ := service.NewProfileService(uRepo, cRepo)
+	connManager := connmanager.NewConnManager(ctx, wg, &http.Client{})
+
+	handServ := handler.NewHandler(uServ, cServ, &connManager)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
 
 	conn, err := grpc.NewClient(
 		getenv.GetString("GRPC_ADDR", "localhost:50051"),
@@ -93,13 +91,28 @@ func main() {
 		Addr:    getenv.GetString("SERVER_ADDR", ":8080"),
 		Handler: r,
 	}
+	go func() {
+		if err := server.ListenAndServe(); err != nil {
+			slog.Error("Failed to run server", "error", err)
+			c <- os.Interrupt
+		}
+	}()
 
-	wg.Add(3)
-	go server.ListenAndServe()
-	go redisClient.Subscribe(wg, ctx, ch)
-	go redisClient.Start(wg, ctx, ch)
+	wg.Add(1)
+	go connManager.Run()
 
 	<-c
+
 	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("Failed to gracefully shutdown HTTP server", "error", err)
+	} else {
+		slog.Info("✅ HTTP server stopped gracefully")
+	}
+
 	wg.Wait()
 }

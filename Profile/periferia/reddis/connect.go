@@ -2,75 +2,132 @@ package reddis
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"sync"
 
-	"github.com/Wladim1r/profile/connmanager"
-	"github.com/Wladim1r/profile/internal/models"
 	"github.com/redis/go-redis/v9"
 )
 
-type rDB struct {
-	rdb *redis.Client
-	cm  *connmanager.ConnectionManager
+type Message struct {
+	Channel string
+	Payload string
 }
 
-func NewClient(cm *connmanager.ConnectionManager) *rDB {
-	return &rDB{
-		rdb: redis.NewClient(&redis.Options{
+type Subscriber struct {
+	Client   *redis.Client
+	Messages chan Message
+
+	subscriptions map[string]*redis.PubSub
+	mu            sync.RWMutex
+}
+
+func NewSubscriber() *Subscriber {
+	return &Subscriber{
+		Client: redis.NewClient(&redis.Options{
 			Addr:     "redis:6379",
 			Password: "",
 			DB:       0,
 		}),
-		cm: cm,
+		Messages:      make(chan Message, 200),
+		subscriptions: make(map[string]*redis.PubSub),
 	}
 }
 
-func (rdb *rDB) Start(wg *sync.WaitGroup, ctx context.Context, inChan chan models.SecondStat) {
-	defer wg.Done()
+func (s *Subscriber) Subscribe(ctx context.Context, symbol string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.subscriptions[symbol]; exists {
+		slog.Debug("Already subscribed to channel", "channel", symbol)
+		return nil
+	}
+
+	pubsub := s.Client.Subscribe(ctx, symbol)
+
+	_, err := pubsub.Receive(ctx)
+	if err != nil {
+		slog.Error("Failed to subscribe to redis channel", "channel", symbol, "error", err)
+		return err
+	}
+
+	s.subscriptions[symbol] = pubsub
+	slog.Info("Subscribed to new redis channel", "channel", symbol)
+
+	go s.listener(ctx, pubsub, symbol)
+
+	return nil
+}
+
+func (s *Subscriber) Unsubscribe(ctx context.Context, symbol string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pubsub, exists := s.subscriptions[symbol]
+	if !exists {
+		slog.Debug("Not subscribed to channel", "channel", symbol)
+		return nil
+	}
+
+	// Отписываемся от канала
+	if err := pubsub.Unsubscribe(ctx, symbol); err != nil {
+		slog.Error("Failed to unsubscribe from channel", "channel", symbol, "error", err)
+		return err
+	}
+
+	// Закрываем PubSub (это остановит listener горутину)
+	if err := pubsub.Close(); err != nil {
+		slog.Warn("Error closing pubsub", "channel", symbol, "error", err)
+	}
+
+	delete(s.subscriptions, symbol)
+	slog.Info("Unsubscribed from redis channel", "channel", symbol)
+
+	return nil
+}
+
+func (s *Subscriber) listener(ctx context.Context, pubsub *redis.PubSub, symbol string) {
+	defer func() {
+		slog.Debug("Listener stopped", "channel", symbol)
+	}()
+
+	ch := pubsub.Channel()
 
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("got interruption signal")
 			return
-		case msg := <-inChan:
-			slog.Info("GOT message from redis stream", "msg", msg)
-
-			rdb.cm.WriteToUser(int(msg.UserID), msg)
-		}
-	}
-}
-
-func (r *rDB) Subscribe(wg *sync.WaitGroup, ctx context.Context, outChan chan models.SecondStat) {
-	defer wg.Done()
-
-	subscriber := r.rdb.Subscribe(ctx, "stream")
-
-	secondStat := new(models.SecondStat)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			msg, err := subscriber.ReceiveMessage(ctx)
-			if err != nil {
-				slog.Error("Could not receive message from redis stream channel", "error", err)
-				continue
+		case msg, ok := <-ch:
+			if !ok {
+				slog.Warn("Redis pubsub channel closed", "channel", symbol)
+				return
 			}
 
-			if err := json.Unmarshal([]byte(msg.Payload), secondStat); err != nil {
-				slog.Error("Failed to parsing bytes into SecondStat struct", "error", err)
-				continue
-			}
 			select {
+			case s.Messages <- Message{Channel: msg.Channel, Payload: msg.Payload}:
 			case <-ctx.Done():
 				return
-			case outChan <- *secondStat:
-				slog.Info("Msg from redis stream has just send to channel")
+			default:
+				slog.Warn("Messages channel full, dropping message", "channel", symbol)
 			}
 		}
 	}
+}
+
+func (s *Subscriber) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Закрываем все активные подписки
+	for symbol, pubsub := range s.subscriptions {
+		if err := pubsub.Close(); err != nil {
+			slog.Warn("Error closing pubsub during shutdown", "channel", symbol, "error", err)
+		}
+	}
+
+	if s.Client != nil {
+		s.Client.Close()
+	}
+
+	close(s.Messages)
+	slog.Info("Subscriber closed, all subscriptions cleaned up")
 }

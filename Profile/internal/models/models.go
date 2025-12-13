@@ -13,7 +13,7 @@ type User struct {
 
 type Coin struct {
 	ID       uint            `gorm:"primaryKey"`
-	Symbol   string          `gorm:"not null;unique"`
+	Symbol   string          `gorm:"not null;"`
 	Quantity decimal.Decimal `gorm:"type:decimal(20,8);not null"`
 
 	UserID uint
@@ -45,7 +45,7 @@ type CoinRequest struct {
 type SecondStat struct {
 	UserID uint    `json:"user_id"`
 	Symbol string  `json:"s"`
-	Price  float32 `json:"p"`
+	Price  float64 `json:"p"`
 }
 
 // type MarketTicker struct {
